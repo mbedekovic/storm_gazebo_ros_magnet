@@ -40,6 +40,8 @@ class DipoleMagnetContainer {
 
   struct Magnet {
     bool calculate;
+    std::float_t gain;
+    math::Vector3 moment_const;
     math::Vector3 moment;
     math::Pose offset;
     math::Pose pose;

@@ -79,7 +79,7 @@ void DipoleMagnet::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf) {
   this->should_publish = false;
   if (_sdf->HasElement("shouldPublish"))
   {
-    this->should_publish = _sdf->GetElement("shouldPublish")->Get<bool>();
+    this->should_publish = _sdf->GetElement("shouldPublish")->Get<int>();
   }
 
   if (!_sdf->HasElement("updateRate"))
@@ -96,9 +96,18 @@ void DipoleMagnet::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf) {
   } else
     this->mag->calculate = true;
 
-  if (_sdf->HasElement("dipole_moment")){
-    this->mag->moment = _sdf->Get<math::Vector3>("dipole_moment");
+  if (_sdf->HasElement("gain")){
+    this->mag->gain = _sdf->Get<double>("gain");
   }
+  else {
+    this->mag->gain = 0.0;
+  }
+
+  if (_sdf->HasElement("dipole_moment")){
+    this->mag->moment_const = _sdf->Get<math::Vector3>("dipole_moment");
+    this->mag->moment = this->mag->gain * this->mag->moment_const;
+  }
+
 
   if (_sdf->HasElement("xyzOffset")){
     this->mag->offset.pos = _sdf->Get<math::Vector3>("xyzOffset");
@@ -109,15 +118,17 @@ void DipoleMagnet::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf) {
     this->mag->offset.rot = math::Quaternion(rpy_offset);
   }
 
-  if (this->should_publish) {
+
     if (!_sdf->HasElement("topicNs"))
     {
-      gzmsg << "DipoleMagnet plugin missing <topicNs>," 
+      gzmsg << "DipoleMagnet plugin missing <topicNs>,"
           "will publish on namespace " << this->link_name << std::endl;
     }
     else {
       this->topic_ns = _sdf->GetElement("topicNs")->Get<std::string>();
     }
+
+    std::cout << "Initializing ROS node." << std::endl;
 
     if (!ros::isInitialized())
     {
@@ -131,18 +142,21 @@ void DipoleMagnet::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf) {
     this->rosnode = new ros::NodeHandle(this->robot_namespace);
     this->rosnode->setCallbackQueue(&this->queue);
 
-    this->wrench_pub = this->rosnode->advertise<geometry_msgs::WrenchStamped>(
-        this->topic_ns + "/wrench", 1,
-        boost::bind( &DipoleMagnet::Connect,this),
-        boost::bind( &DipoleMagnet::Disconnect,this), ros::VoidPtr(), &this->queue);
-    this->mfs_pub = this->rosnode->advertise<sensor_msgs::MagneticField>(
-        this->topic_ns + "/mfs", 1,
-        boost::bind( &DipoleMagnet::Connect,this),
-        boost::bind( &DipoleMagnet::Disconnect,this), ros::VoidPtr(), &this->queue);
+    if (this->should_publish) {
+        this->wrench_pub = this->rosnode->advertise<geometry_msgs::WrenchStamped>(
+            this->topic_ns + "/wrench", 1,
+            boost::bind( &DipoleMagnet::Connect,this),
+            boost::bind( &DipoleMagnet::Disconnect,this), ros::VoidPtr(), &this->queue);
+        this->mfs_pub = this->rosnode->advertise<sensor_msgs::MagneticField>(
+            this->topic_ns + "/mfs", 1,
+            boost::bind( &DipoleMagnet::Connect,this),
+            boost::bind( &DipoleMagnet::Disconnect,this), ros::VoidPtr(), &this->queue);
 
-    // Custom Callback Queue
-    this->callback_queue_thread = boost::thread( boost::bind( &DipoleMagnet::QueueThread,this ) );
-  }
+        // Custom Callback Queue
+        this->callback_queue_thread = boost::thread( boost::bind( &DipoleMagnet::QueueThread,this ) );
+    }
+
+  this->magnet_gain_sub = this->rosnode->subscribe(this->topic_ns + "/gain", 2, &DipoleMagnet::MagnetGainCb, this);
 
   this->mag->model_id = this->model->GetId();
 
@@ -310,6 +324,12 @@ void DipoleMagnet::GetMFS(const math::Pose& p_self,
   mfs.x = B_body[0];
   mfs.y = B_body[1];
   mfs.z = B_body[2];
+}
+
+void DipoleMagnet::MagnetGainCb(const std_msgs::Float32::ConstPtr &msg) {
+
+   this->mag->gain = msg->data;
+   this->mag->moment = this->mag->gain * this->mag->moment_const;
 }
 
 // Register this plugin with the simulator

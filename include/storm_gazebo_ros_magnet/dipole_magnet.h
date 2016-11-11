@@ -26,6 +26,7 @@
 
 #include <geometry_msgs/WrenchStamped.h>
 #include <sensor_msgs/MagneticField.h>
+#include <std_msgs/Float32.h>
 
 #include <memory>
 
@@ -85,6 +86,10 @@ class DipoleMagnet : public ModelPlugin {
       const math::Vector3& m_other,
       math::Vector3& mfs);
 
+  /// \brief ROS callback for magnet gain.
+  /// \param[in] msg Message containing data field which represent magnet gain
+  void MagnetGainCb(const std_msgs::Float32::ConstPtr &msg);
+
   // Pointer to the model
  private:
   physics::ModelPtr model;
@@ -101,6 +106,9 @@ class DipoleMagnet : public ModelPlugin {
   ros::NodeHandle* rosnode;
   ros::Publisher wrench_pub;
   ros::Publisher mfs_pub;
+
+  // ROS subscribers
+  ros::Subscriber magnet_gain_sub;
 
   geometry_msgs::WrenchStamped wrench_msg;
   sensor_msgs::MagneticField mfs_msg;
