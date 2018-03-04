@@ -22,6 +22,8 @@
 
 #include <ros/callback_queue.h>
 #include <ros/advertise_options.h>
+#include <ros/subscribe_options.h>
+#include <std_msgs/Float64.h>
 #include <ros/ros.h>
 
 #include <iostream>
@@ -128,6 +130,8 @@ void DipoleMagnet::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf) {
       return;
     }
 
+
+
     this->rosnode = new ros::NodeHandle(this->robot_namespace);
     this->rosnode->setCallbackQueue(&this->queue);
 
@@ -139,6 +143,17 @@ void DipoleMagnet::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf) {
         this->topic_ns + "/mfs", 1,
         boost::bind( &DipoleMagnet::Connect,this),
         boost::bind( &DipoleMagnet::Disconnect,this), ros::VoidPtr(), &this->queue);
+
+    // Subscriber options
+    ros::SubscribeOptions so = 
+    ros::SubscribeOptions::create<std_msgs::Float64>(
+      "/" + this->model->GetName() + "/electroMagent",
+      1,
+      boost::bind(&DipoleMagnet::OnRosMsg, this, _1),
+      ros::VoidPtr(), &this->queue);
+    // Subscribe to topic
+    this->rosSub = this->rosnode->subscribe(so);
+
 
     // Custom Callback Queue
     this->callback_queue_thread = boost::thread( boost::bind( &DipoleMagnet::QueueThread,this ) );
@@ -171,6 +186,18 @@ void DipoleMagnet::QueueThread() {
   {
     this->queue.callAvailable(ros::WallDuration(timeout));
   }
+}
+
+void DipoleMagnet::OnRosMsg(const std_msgs::Float64ConstPtr &_msg)
+{
+  if (_msg->data > 0.0)
+    {
+      this->_em_status = true;
+    }
+  else
+    {
+      this->_em_status = false; 
+    }
 }
 
 // Called by the world update start event

@@ -85,6 +85,8 @@ class DipoleMagnet : public ModelPlugin {
       const math::Vector3& m_other,
       math::Vector3& mfs);
 
+  void OnRosMsg(const std_msgs::Float64ConstPtr &_msg);
+
   // Pointer to the model
  private:
   physics::ModelPtr model;
@@ -101,6 +103,7 @@ class DipoleMagnet : public ModelPlugin {
   ros::NodeHandle* rosnode;
   ros::Publisher wrench_pub;
   ros::Publisher mfs_pub;
+  ros::Subscriber rosSub;
 
   geometry_msgs::WrenchStamped wrench_msg;
   sensor_msgs::MagneticField mfs_msg;
@@ -116,6 +119,8 @@ class DipoleMagnet : public ModelPlugin {
   double update_rate;
   // Pointer to the update event connection
   event::ConnectionPtr update_connection;
+
+  bool _em_status;
 };
 
 }
