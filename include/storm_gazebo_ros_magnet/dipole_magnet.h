@@ -86,7 +86,7 @@ class DipoleMagnet : public ModelPlugin {
       math::Vector3& mfs);
 
   //// \brief Callback function for electromagnet control topic
-  void OnRosMsg(const std_msgs::Float64ConstPtr &_msg);
+  void OnRosMsg(const std_msgs::Float32::ConstPtr &_msg);
 
   // Pointer to the model
  private:
@@ -101,6 +101,7 @@ class DipoleMagnet : public ModelPlugin {
   std::string topic_ns;
 
   bool should_publish;
+  bool should_subscribe;
   ros::NodeHandle* rosnode;
   ros::Publisher wrench_pub;
   ros::Publisher mfs_pub;
@@ -121,7 +122,6 @@ class DipoleMagnet : public ModelPlugin {
   // Pointer to the update event connection
   event::ConnectionPtr update_connection;
 
-  bool _em_status;
 };
 
 }

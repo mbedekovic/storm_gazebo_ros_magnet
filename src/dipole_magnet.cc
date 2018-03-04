@@ -23,7 +23,7 @@
 #include <ros/callback_queue.h>
 #include <ros/advertise_options.h>
 #include <ros/subscribe_options.h>
-#include <std_msgs/Float64.h>
+#include <std_msgs/Float32.h>
 #include <ros/ros.h>
 
 #include <iostream>
@@ -36,11 +36,12 @@ namespace gazebo {
 
 DipoleMagnet::DipoleMagnet(): ModelPlugin() {
   this->connect_count = 0;
-}
+  }
 
 DipoleMagnet::~DipoleMagnet() {
   event::Events::DisconnectWorldUpdateBegin(this->update_connection);
-  if (this->should_publish) {
+  // Clean up ROS stuff
+  if (this->should_publish || this->should_subscribe) {
     this->queue.clear();
     this->queue.disable();
     this->rosnode->shutdown();
@@ -84,6 +85,12 @@ void DipoleMagnet::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf) {
     this->should_publish = _sdf->GetElement("shouldPublish")->Get<bool>();
   }
 
+  this->should_subscribe = false;
+  if (_sdf->HasElement("shouldSubscribe"))
+  {
+    this->should_subscribe = _sdf->GetElement("shouldSubscribe")->Get<bool>();
+  }
+
   if (!_sdf->HasElement("updateRate"))
   {
     gzmsg << "DipoleMagnet plugin missing <updateRate>, defaults to 0.0"
@@ -98,8 +105,18 @@ void DipoleMagnet::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf) {
   } else
     this->mag->calculate = true;
 
+  if (_sdf->HasElement("gain"))
+  {
+    this->mag->gain = _sdf->Get<double>("gain");
+  }
+  else
+  {
+    this->mag->gain = 0.0;
+  }
+
   if (_sdf->HasElement("dipole_moment")){
-    this->mag->moment = _sdf->Get<math::Vector3>("dipole_moment");
+    this->mag->moment_const = _sdf->Get<math::Vector3>("dipole_moment");
+    this->mag->moment = this->mag->gain * this->mag->moment_const;
   }
 
   if (_sdf->HasElement("xyzOffset")){
@@ -111,7 +128,7 @@ void DipoleMagnet::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf) {
     this->mag->offset.rot = math::Quaternion(rpy_offset);
   }
 
-  if (this->should_publish) {
+  if (this->should_publish || this->should_subscribe) {
     if (!_sdf->HasElement("topicNs"))
     {
       gzmsg << "DipoleMagnet plugin missing <topicNs>," 
@@ -134,25 +151,30 @@ void DipoleMagnet::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf) {
 
     this->rosnode = new ros::NodeHandle(this->robot_namespace);
     this->rosnode->setCallbackQueue(&this->queue);
-
-    this->wrench_pub = this->rosnode->advertise<geometry_msgs::WrenchStamped>(
-        this->topic_ns + "/wrench", 1,
-        boost::bind( &DipoleMagnet::Connect,this),
-        boost::bind( &DipoleMagnet::Disconnect,this), ros::VoidPtr(), &this->queue);
-    this->mfs_pub = this->rosnode->advertise<sensor_msgs::MagneticField>(
-        this->topic_ns + "/mfs", 1,
-        boost::bind( &DipoleMagnet::Connect,this),
-        boost::bind( &DipoleMagnet::Disconnect,this), ros::VoidPtr(), &this->queue);
-
-    // Subscriber options
-    ros::SubscribeOptions so = 
-    ros::SubscribeOptions::create<std_msgs::Float64>(
-      "/" + this->model->GetName() + "/electroMagent",
-      1,
-      boost::bind(&DipoleMagnet::OnRosMsg, this, _1),
-      ros::VoidPtr(), &this->queue);
-    // Subscribe to topic
-    this->rosSub = this->rosnode->subscribe(so);
+    if (this->should_publish)
+    {
+      this->wrench_pub = this->rosnode->advertise<geometry_msgs::WrenchStamped>(
+          this->topic_ns + "/wrench", 1,
+          boost::bind( &DipoleMagnet::Connect,this),
+          boost::bind( &DipoleMagnet::Disconnect,this), ros::VoidPtr(), &this->queue);
+      this->mfs_pub = this->rosnode->advertise<sensor_msgs::MagneticField>(
+          this->topic_ns + "/mfs", 1,
+          boost::bind( &DipoleMagnet::Connect,this),
+          boost::bind( &DipoleMagnet::Disconnect,this), ros::VoidPtr(), &this->queue);
+    }
+    if (this->should_subscribe)
+    {
+      // Subscriber options
+      ros::SubscribeOptions so = 
+      ros::SubscribeOptions::create<std_msgs::Float32>(
+        "/" + this->model->GetName() + "/electroMagent",
+        1,
+        boost::bind(&DipoleMagnet::OnRosMsg, this, _1),
+        ros::VoidPtr(), &this->queue);
+      // Subscribe to topic
+      this->rosSub = this->rosnode->subscribe(so);
+      //If it's an electromagnet create it turned off
+    }
 
 
     // Custom Callback Queue
@@ -188,16 +210,11 @@ void DipoleMagnet::QueueThread() {
   }
 }
 
-void DipoleMagnet::OnRosMsg(const std_msgs::Float64ConstPtr &_msg)
+void DipoleMagnet::OnRosMsg(const std_msgs::Float32::ConstPtr &_msg)
 {
-  if (_msg->data > 0.0)
-    {
-      this->_em_status = true;
-    }
-  else
-    {
-      this->_em_status = false; 
-    }
+  std::cout << "Callback" << std::endl;
+  this->mag->gain = _msg->data;
+  this->mag->moment = this->mag->gain*this->mag->moment_const;
 }
 
 // Called by the world update start event
@@ -212,12 +229,11 @@ void DipoleMagnet::OnUpdate(const common::UpdateInfo & /*_info*/) {
 
   if (!this->mag->calculate)
     return;
-
+  
   DipoleMagnetContainer& dp = DipoleMagnetContainer::Get();
 
-
   math::Vector3 moment_world = p_self.rot.RotateVector(this->mag->moment);
-
+ 
   math::Vector3 force(0, 0, 0);
   math::Vector3 torque(0, 0, 0);
   math::Vector3 mfs(0, 0, 0);
@@ -297,7 +313,7 @@ void DipoleMagnet::GetForceTorque(const math::Pose& p_self,
     math::Vector3& force,
     math::Vector3& torque) {
 
-  bool debug = false;
+  bool debug  = false;
   math::Vector3 p = p_self.pos - p_other.pos;
   math::Vector3 p_unit = p/p.GetLength();
 
@@ -306,27 +322,12 @@ void DipoleMagnet::GetForceTorque(const math::Pose& p_self,
   if (debug)
     std::cout << "p: " << p << " m1: " << m1 << " m2: " << m2 << std::endl;
 
-  double K;
-  double Ktorque;
-  // Checking if the electromagnet is on or off
-  if (this->_em_status)
-  {
-    K = 3.0*1e-7/pow(p.GetLength(), 4);
-  }
-  else
-  {
-     K = 0.0; 
-  }
+  
+   double K = 3.0*1e-7/pow(p.GetLength(), 4);
     force = K * (m2 * (m1.Dot(p_unit)) +  m1 * (m2.Dot(p_unit)) +
         p_unit*(m1.Dot(m2)) - 5*p_unit*(m1.Dot(p_unit))*(m2.Dot(p_unit)));
-  if (this->_em_status)
-  {
-    Ktorque = 1e-7/pow(p.GetLength(), 3);
-  }
-  else
-  {
-    Ktorque = 0.0;
-  }
+  
+    double Ktorque = 1e-7/pow(p.GetLength(), 3);
     math::Vector3 B1 = Ktorque*(3*(m1.Dot(p_unit))*p_unit - m1);
     torque = m2.Cross(B1);
     if (debug)
