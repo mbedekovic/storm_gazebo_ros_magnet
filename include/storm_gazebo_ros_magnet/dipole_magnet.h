@@ -85,6 +85,7 @@ class DipoleMagnet : public ModelPlugin {
       const math::Vector3& m_other,
       math::Vector3& mfs);
 
+  //// \brief Callback function for electromagnet control topic
   void OnRosMsg(const std_msgs::Float64ConstPtr &_msg);
 
   // Pointer to the model

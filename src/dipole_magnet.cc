@@ -306,15 +306,31 @@ void DipoleMagnet::GetForceTorque(const math::Pose& p_self,
   if (debug)
     std::cout << "p: " << p << " m1: " << m1 << " m2: " << m2 << std::endl;
 
-  double K = 3.0*1e-7/pow(p.GetLength(), 4);
-  force = K * (m2 * (m1.Dot(p_unit)) +  m1 * (m2.Dot(p_unit)) +
-      p_unit*(m1.Dot(m2)) - 5*p_unit*(m1.Dot(p_unit))*(m2.Dot(p_unit)));
-
-  double Ktorque = 1e-7/pow(p.GetLength(), 3);
-  math::Vector3 B1 = Ktorque*(3*(m1.Dot(p_unit))*p_unit - m1);
-  torque = m2.Cross(B1);
-  if (debug)
-    std::cout << "B: " << B1 << " K: " << Ktorque << " t: " << torque << std::endl;
+  double K;
+  double Ktorque;
+  // Checking if the electromagnet is on or off
+  if (this->_em_status)
+  {
+    K = 3.0*1e-7/pow(p.GetLength(), 4);
+  }
+  else
+  {
+     K = 0.0; 
+  }
+    force = K * (m2 * (m1.Dot(p_unit)) +  m1 * (m2.Dot(p_unit)) +
+        p_unit*(m1.Dot(m2)) - 5*p_unit*(m1.Dot(p_unit))*(m2.Dot(p_unit)));
+  if (this->_em_status)
+  {
+    Ktorque = 1e-7/pow(p.GetLength(), 3);
+  }
+  else
+  {
+    Ktorque = 0.0;
+  }
+    math::Vector3 B1 = Ktorque*(3*(m1.Dot(p_unit))*p_unit - m1);
+    torque = m2.Cross(B1);
+    if (debug)
+      std::cout << "B: " << B1 << " K: " << Ktorque << " t: " << torque << std::endl;
 }
 
 void DipoleMagnet::GetMFS(const math::Pose& p_self,
